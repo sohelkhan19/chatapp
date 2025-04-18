@@ -1,177 +1,129 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ChatBuddy - Login</title>
-    <link
-      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
-      rel="stylesheet"
-    />
-  </head>
-  <body class="bg-light">
-    <div class="container mt-5">
-      <h2 class="text-center mb-4">Welcome to ChatBuddy</h2>
-      <div class="row justify-content-center">
-        <div class="col-md-5">
-          <!-- Login Form -->
-          <div class="card mb-4">
-            <div class="card-header">Login</div>
-            <div class="card-body">
-              <input
-                type="email"
-                id="loginEmail"
-                class="form-control mb-2"
-                placeholder="Email"
-              />
-              <input
-                type="password"
-                id="loginPassword"
-                class="form-control mb-3"
-                placeholder="Password"
-              />
-              <button id="loginBtn" class="btn btn-primary w-100">Login</button>
-              <p id="loginMsg" class="text-danger mt-2"></p>
-            </div>
-          </div>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ChatBuddy - Login</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <style>
+    body {
+      height: 100vh;
+      background: linear-gradient(135deg, #4b6cb7, #182848);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Segoe UI', sans-serif;
+    }
 
-          <!-- Register Form -->
-          <div class="card">
-            <div class="card-header">Register</div>
-            <div class="card-body">
-              <input
-                type="text"
-                id="registerName"
-                class="form-control mb-2"
-                placeholder="Full Name"
-              />
-              <input
-                type="email"
-                id="registerEmail"
-                class="form-control mb-2"
-                placeholder="Email"
-              />
-              <input
-                type="password"
-                id="registerPassword"
-                class="form-control mb-3"
-                placeholder="Password"
-              />
-              <button id="registerBtn" class="btn btn-success w-100">
-                Register
-              </button>
-              <p id="registerMsg" class="text-danger mt-2"></p>
-            </div>
-          </div>
-        </div>
-      </div>
+    .login-card {
+      backdrop-filter: blur(10px);
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 15px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+      padding: 2rem;
+      width: 100%;
+      max-width: 400px;
+      color: white;
+    }
+
+    .login-card h2 {
+      font-weight: 600;
+      margin-bottom: 1rem;
+      text-align: center;
+    }
+
+    .form-control {
+      background: rgba(255, 255, 255, 0.2);
+      border: none;
+      color: #fff;
+    }
+
+    .form-control::placeholder {
+      color: #e0e0e0;
+    }
+
+    .form-control:focus {
+      background: rgba(255, 255, 255, 0.3);
+      color: #fff;
+      border: none;
+      box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.3);
+    }
+
+    #loginBtn {
+      background: #00c6ff;
+      background: linear-gradient(to right, #0072ff, #00c6ff);
+      border: none;
+      font-weight: 600;
+      transition: all 0.3s ease-in-out;
+    }
+
+    #loginBtn:hover {
+      background: linear-gradient(to right, #00c6ff, #0072ff);
+      transform: scale(1.03);
+    }
+
+    #loginMsg {
+      font-size: 0.9rem;
+      text-align: center;
+    }
+
+    .footer-text {
+      text-align: center;
+      margin-top: 1.5rem;
+      color: #ddd;
+    }
+
+    .footer-text a {
+      color: #00c6ff;
+      text-decoration: none;
+    }
+
+    .footer-text a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div class="login-card">
+    <h2>Welcome to ChatBuddy</h2>
+    <input type="email" id="loginEmail" class="form-control mb-3" placeholder="Email" />
+    <input type="password" id="loginPassword" class="form-control mb-3" placeholder="Password" />
+    <button id="loginBtn" class="btn btn-primary w-100">Login</button>
+    <p id="loginMsg" class="text-warning mt-2"></p>
+    <div class="footer-text">
+      <!-- Don't have an account? <a href="user_reg.html">Register here</a> -->
     </div>
+  </div>
 
-    <script>
-      // Toast notification system
-      function showToast(message, type = "info", duration = 5000) {
-        const toastContainer = document.getElementById("toastContainer");
-        const toast = document.createElement("div");
-        toast.className = `toast show toast-${type}`;
-        toast.innerHTML = `
-    <div class="toast-body d-flex justify-content-between align-items-center">
-      ${message}
-      <button type="button" class="btn-close btn-close-white ms-3" onclick="this.parentElement.parentElement.remove()"></button>
-    </div>
-  `;
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
+    import { getAuth, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
 
-        toastContainer.appendChild(toast);
+    const firebaseConfig = {
+      apiKey: "AIzaSyCN3WuNMg4Hn2yi3Sgc7HOVe94ewFzW71g",
+      authDomain: "chatbuddy-cb.firebaseapp.com",
+      projectId: "chatbuddy-cb",
+      storageBucket: "chatbuddy-cb.appspot.com",
+      messagingSenderId: "214341806044",
+      appId: "1:214341806044:web:b2d24a456151a364aad119",
+    };
 
-        // Auto-remove after duration
-        setTimeout(() => {
-          toast.remove();
-        }, duration);
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
 
-        return toast;
-      }
-    </script>
+    document.getElementById("loginBtn").addEventListener("click", () => {
+      const email = document.getElementById("loginEmail").value;
+      const password = document.getElementById("loginPassword").value;
 
-    <!-- Firebase and Scripts -->
-    <script type="module">
-      // Firebase SDK imports
-      import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
-      import {
-        getAuth,
-        signInWithEmailAndPassword,
-        createUserWithEmailAndPassword,
-      } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
-      import {
-        getFirestore,
-        doc,
-        setDoc,
-      } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
-
-      const firebaseConfig = {
-        apiKey: "AIzaSyCN3WuNMg4Hn2yi3Sgc7HOVe94ewFzW71g",
-        authDomain: "chatbuddy-cb.firebaseapp.com",
-        projectId: "chatbuddy-cb",
-        storageBucket: "chatbuddy-cb.appspot.com",
-        messagingSenderId: "214341806044",
-        appId: "1:214341806044:web:b2d24a456151a364aad119",
-      };
-
-      const app = initializeApp(firebaseConfig);
-      const auth = getAuth(app);
-      const db = getFirestore(app);
-
-      // Login logic
-      // In your index.html's login logic
-      document.getElementById("loginBtn").addEventListener("click", () => {
-        const email = document.getElementById("loginEmail").value;
-        const password = document.getElementById("loginPassword").value;
-
-        signInWithEmailAndPassword(auth, email, password)
-          .then((userCredential) => {
-            // Set fresh login flag
-            sessionStorage.setItem("freshLogin", "true");
-            window.location.href = "chat.html";
-          })
-          .catch((error) => {
-            document.getElementById("loginMsg").innerText = error.message;
-          });
-      });
-
-      // Register logic
-      document
-        .getElementById("registerBtn")
-        .addEventListener("click", async () => {
-          const name = document.getElementById("registerName").value.trim();
-          const email = document.getElementById("registerEmail").value.trim();
-          const password = document.getElementById("registerPassword").value;
-
-          if (!name || !email || !password) {
-            document.getElementById("registerMsg").innerText =
-              "Please fill all fields.";
-            return;
-          }
-
-          try {
-            const userCredential = await createUserWithEmailAndPassword(
-              auth,
-              email,
-              password
-            );
-            const user = userCredential.user;
-
-            // Store user name in Firestore
-            await setDoc(doc(db, "users", user.uid), {
-              name: name,
-              email: email,
-            });
-
-            document.getElementById("registerMsg").innerText =
-              "Registered! You can now login.";
-          } catch (error) {
-            document.getElementById("registerMsg").innerText = error.message;
-          }
+      signInWithEmailAndPassword(auth, email, password)
+        .then((userCredential) => {
+          sessionStorage.setItem("freshLogin", "true");
+          window.location.href = "chat.html";
+        })
+        .catch((error) => {
+          document.getElementById("loginMsg").innerText = error.message;
         });
-    </script>
-
-    <div id="toastContainer" class="toast-container"></div>
-  </body>
+    });
+  </script>
+</body>
 </html>
