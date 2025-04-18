@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>ChatBuddy | Chat Room</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <!-- EmojiMart Styles -->
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/emoji-mart@5.4.0/dist/emoji-mart.css"
+    />
+    <!-- EmojiMart JS -->
+    <script src="https://cdn.jsdelivr.net/npm/emoji-mart@5.4.0/dist/browser.js"></script>
+
+    <link rel="stylesheet" href="css/styles.css" />
+  </head>
+
+  <body>
+    <div class="container mt-4">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3>ChatBuddy 💬</h3>
+        <button id="logoutBtn" class="btn btn-danger position-relative">
+          <span id="logoutText">Logout</span>
+          <span
+            id="logoutSpinner"
+            class="position-absolute top-50 start-50 translate-middle spinner-border spinner-border-sm d-none"
+          ></span>
+        </button>
+      </div>
+
+      <!-- Room selection -->
+      <div class="mb-3">
+        <select id="roomSelect" class="form-select">
+          <option value="general"># General</option>
+          <option value="friends"># Friends</option>
+          <option value="tech"># Tech Talk</option>
+        </select>
+      </div>
+
+      <!-- Chat box with typing indicator inside -->
+      <div id="chatBox" class="mb-3">
+        <div id="chatLoader" class="chat-loader">
+          <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+          </div>
+        </div>
+        <div id="typingIndicator"></div>
+      </div>
+
+      <!-- Message input group -->
+      <div class="chat-controls">
+        <div class="input-group">
+          <!-- Emoji Picker container -->
+          <div
+            id="emojiPickerContainer"
+            style="
+              position: absolute;
+              bottom: 70px;
+              right: 20px;
+              display: none;
+              z-index: 100;
+            "
+          ></div>
+
+          <input
+            type="text"
+            id="messageInput"
+            class="form-control"
+            placeholder="Type your message..."
+          />
+          <button id="sendBtn" class="btn btn-primary position-relative">
+            <span id="sendText">Send</span>
+            <span
+              id="sendSpinner"
+              class="position-absolute top-50 start-50 translate-middle spinner-border spinner-border-sm d-none"
+            ></span>
+          </button>
+        </div>
+
+        <!-- Action Area: Upload, Emoji, etc. -->
+        <div id="actionArea">
+          <button id="emojiBtn" class="btn btn-light">😊 Emoji</button>
+          <input
+            type="file"
+            id="imageInput"
+            accept="image/*"
+            class="form-control"
+          />
+          <button id="uploadBtn" class="btn btn-secondary">
+            📤 Upload Image
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // Toast notification system
+      function showToast(message, type = "info", duration = 5000) {
+        const toastContainer = document.getElementById("toastContainer");
+        const toast = document.createElement("div");
+        toast.className = `toast show toast-${type}`;
+        toast.innerHTML = `
+          <div class="toast-body d-flex justify-content-between align-items-center">
+            ${message}
+            <button type="button" class="btn-close btn-close-white ms-3" onclick="this.parentElement.parentElement.remove()"></button>
+          </div>
+        `;
+
+        toastContainer.appendChild(toast);
+
+        // Auto-remove after duration
+        setTimeout(() => {
+          toast.remove();
+        }, duration);
+
+        return toast;
+      }
+    </script>
+    <!-- Firebase & Chat Logic -->
+    <script type="module">
+      import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
+      import {
+        getAuth,
+        onAuthStateChanged,
+        signOut,
+      } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
+      import {
+        getFirestore,
+        collection,
+        addDoc,
+        onSnapshot,
+        query,
+        orderBy,
+        doc,
+        getDoc,
+        setDoc,
+        deleteDoc,
+        where,
+        writeBatch,
+        getDocs,
+        updateDoc,
+      } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+
+      const firebaseConfig = {
+        apiKey: "AIzaSyCN3WuNMg4Hn2yi3Sgc7HOVe94ewFzW71g",
+        authDomain: "chatbuddy-cb.firebaseapp.com",
+        projectId: "chatbuddy-cb",
+        storageBucket: "chatbuddy-cb.appspot.com",
+        messagingSenderId: "214341806044",
+        appId: "1:214341806044:web:b2d24a456151a364aad119",
+      };
+
+      const app = initializeApp(firebaseConfig);
+      const auth = getAuth(app);
+      const db = getFirestore(app);
+
+      let currentUser = null;
+      let currentUsername = null;
+      let currentRoom = "general";
+
+      const chatBox = document.getElementById("chatBox");
+      const messageInput = document.getElementById("messageInput");
+      const emojiContainer = document.getElementById("emojiPickerContainer");
+      const typingIndicator = document.getElementById("typingIndicator");
+      const sendBtn = document.getElementById("sendBtn");
+      const logoutBtn = document.getElementById("logoutBtn");
+      const roomSelect = document.getElementById("roomSelect");
+      const uploadBtn = document.getElementById("uploadBtn");
+      const imageInput = document.getElementById("imageInput");
+      const emojiBtn = document.getElementById("emojiBtn");
+
+      const picker = new EmojiMart.Picker({
+        onEmojiSelect: (emoji) => {
+          messageInput.value += emoji.native;
+          messageInput.focus();
+        },
+        theme: "light",
+        locale: "en",
+      });
+
+      emojiContainer.appendChild(picker);
+
+      // Toggle show/hide emoji picker
+      emojiBtn.addEventListener("click", () => {
+        emojiContainer.style.display =
+          emojiContainer.style.display === "none" ? "block" : "none";
+      });
+
+      // Hide picker when clicking outside
+      document.addEventListener("click", (e) => {
+        if (!emojiContainer.contains(e.target) && e.target !== emojiBtn) {
+          emojiContainer.style.display = "none";
+        }
+      });
+
+      // Typing indicator logic
+      let typingTimeout;
+
+      messageInput.addEventListener("input", () => {
+        if (currentUser) {
+          updateTypingStatus(true);
+
+          clearTimeout(typingTimeout);
+          typingTimeout = setTimeout(() => {
+            updateTypingStatus(false);
+          }, 2000); // stop typing after 2 seconds of inactivity
+        }
+      });
+
+      messageInput.addEventListener("blur", () => {
+        updateTypingStatus(false);
+      });
+
+      async function updateTypingStatus(isTyping) {
+        const typingRef = doc(
+          db,
+          "chatrooms",
+          currentRoom,
+          "typing",
+          currentUser.uid
+        );
+        if (isTyping) {
+          await setDoc(typingRef, {
+            isTyping: true,
+            username: currentUsername,
+          });
+        } else {
+          await deleteDoc(typingRef);
+        }
+      }
+
+      // Auth state
+      // Modified auth state listener
+      onAuthStateChanged(auth, async (user) => {
+        try {
+          if (user) {
+            currentUser = user;
+
+            if (document.getElementById("logoutBtn")) {
+              setLoading("logoutBtn", true);
+            }
+
+            // Get username from Firestore
+            const userDoc = await getDoc(doc(db, "users", user.uid));
+
+            if (userDoc.exists()) {
+              currentUsername = userDoc.data().name;
+            } else {
+              currentUsername = user.email.split("@")[0];
+            }
+
+            // Check if this is a fresh login (not page refresh)
+            if (sessionStorage.getItem("freshLogin") === "true") {
+              showToast(`Welcome back, ${currentUsername}!`, "success");
+              sessionStorage.removeItem("freshLogin"); // Clear the flag
+            }
+
+            listenToMessages(currentRoom);
+            listenToTyping(currentRoom);
+          } else {
+            window.location.href = "index.html";
+          }
+        } catch (error) {
+          showToast(`Session error: ${error.message}`, "error");
+          console.error("Auth state error:", error);
+        } finally {
+          if (document.getElementById("logoutBtn")) {
+            setLoading("logoutBtn", false);
+          }
+        }
+      });
+
+      // Send message
+      // Updated send message function
+      sendBtn.addEventListener("click", async () => {
+        try {
+          const message = messageInput.value.trim();
+          if (!message) {
+            showToast("Message cannot be empty", "warning");
+            return;
+          }
+
+          setLoading("sendBtn", true);
+
+          // Update your send message function to include:
+          await addDoc(collection(db, "chatrooms", currentRoom, "messages"), {
+            user: currentUsername,
+            userId: currentUser.uid,
+            text: message,
+            time: new Date(),
+            type: "text", // or "image" for images
+            status: "sent",
+            reactions: {}, // Initialize empty reactions
+            isEdited: false, // New
+            isDeleted: false, // New
+          });
+
+          messageInput.value = "";
+        } catch (error) {
+          showToast(`Failed to send message: ${error.message}`, "error");
+          console.error("Send error:", error);
+        } finally {
+          setLoading("sendBtn", false);
+        }
+      });
+
+      // Switch room
+      roomSelect.addEventListener("change", () => {
+        currentRoom = roomSelect.value;
+        setLoading("chatBox", true); // Show loader
+        chatBox.innerHTML = `
+                      <div id="chatLoader" class="chat-loader">
+                        <div class="spinner-border text-primary" role="status">
+                          <span class="visually-hidden">Loading...</span>
+                        </div>
+                      </div>
+                      <div id="typingIndicator"></div>
+                    `;
+        listenToMessages(currentRoom);
+      });
+
+      // Listen for messages
+      function listenToMessages(room) {
+        showChatLoader(true); // Show loader when starting to load
+
+        const q = query(
+          collection(db, "chatrooms", room, "messages"),
+          orderBy("time")
+        );
+
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+          showChatLoader(false); // Hide loader when messages arrive
+
+          // Clear chatbox but keep loader and typing indicator
+          const messages = Array.from(chatBox.children).filter(
+            (child) => !["chatLoader", "typingIndicator"].includes(child.id)
+          );
+          messages.forEach((child) => child.remove());
+
+          snapshot.forEach((doc) => {
+            const msg = doc.data();
+            displayMessage(msg, doc.id); // Pass both message data AND document ID
+          });
+
+          chatBox.scrollTop = chatBox.scrollHeight;
+        });
+
+        return unsubscribe; // For cleanup if needed
+      }
+
+      // Helper function to generate consistent color class based on user ID
+      function getUsernameColorClass(userId) {
+        if (!userId) return "username-color-1";
+
+        // Simple hash function to convert user ID to a number 1-8
+        const hash = Array.from(userId).reduce(
+          (hash, char) =>
+            char.charCodeAt(0) + (hash << 6) + (hash << 16) - hash,
+          0
+        );
+        const colorIndex = (Math.abs(hash) % 8) + 1;
+
+        return `username-color-${colorIndex}`;
+      }
+
+      // Updated message display function
+      function displayMessage(msg, docId) {
+        const isCurrentUser = msg.userId === currentUser.uid;
+        const messageDiv = document.createElement("div");
+        messageDiv.className = `message ${isCurrentUser ? "sent" : "received"}`;
+
+        // Handle deleted messages first
+        let content = msg.isDeleted
+          ? '<span class="deleted-message">[Message deleted]</span>'
+          : msg.text;
+
+        if (msg.type === "image" && !msg.isDeleted) {
+          content = `<img src="${msg.text}" class="img-fluid rounded" style="max-height: 200px;">`;
+        }
+
+        // Format timestamp
+        const timestamp = msg.time?.toDate?.() || new Date(msg.time);
+        const timeString = timestamp.toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+
+        // Username color
+        const usernameColorClass = getUsernameColorClass(msg.userId);
+
+        // Only show sender name for received messages in group chat
+        const showSender = !isCurrentUser && currentRoom !== "friends";
+
+        // Reactions
+        const reactionsHTML = Object.entries(msg.reactions || {})
+          .map(([emoji, users]) => {
+            const isYourReaction = users.includes(currentUser.uid);
+            return `
+        <button class="reaction-btn ${isYourReaction ? "your-reaction" : ""}" 
+                data-emoji="${emoji}" 
+                data-docid="${docId}">
+          ${emoji} ${users.length}
+        </button>
+        `;
+          })
+          .join("");
+
+        // Action buttons (only for non-deleted user messages)
+        const actionsHTML =
+          isCurrentUser && !msg.isDeleted
+            ? `
+        <div class="message-actions">
+        ${
+          msg.type !== "image"
+            ? `
+          <button class="edit-btn" data-docid="${docId}">
+            <svg width="12" height="12" viewBox="0 0 24 24"><path fill="currentColor" d="M20.71 7.04c.39-.39.39-1.04 0-1.41l-2.34-2.34c-.37-.39-1.02-.39-1.41 0l-1.84 1.83l3.75 3.75M3 17.25V21h3.75L17.81 9.93l-3.75-3.75L3 17.25z"/></svg>
+          </button>
+        `
+            : ""
+        }
+        <button class="delete-btn" data-docid="${docId}">
+          <svg width="12" height="12" viewBox="0 0 24 24"><path fill="currentColor" d="M19 4h-3.5l-1-1h-5l-1 1H5v2h14M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12z"/></svg>
+        </button>
+          </div>
+        `
+            : "";
+
+        const editedHTML = msg.isEdited
+          ? '<span class="message-edited">(edited)</span>'
+          : "";
+
+        // Construct full message HTML
+        messageDiv.innerHTML = `
+          ${actionsHTML}
+          ${
+            showSender
+              ? `
+                <div class="message-header">
+                  <span class="message-sender ${usernameColorClass}">${msg.user}</span>
+                  <span class="message-time">${timeString}</span>
+                </div>
+              `
+              : `
+                <div class="message-header">
+                  <span class="message-time">${timeString}</span>
+                </div>
+              `
+          }
+          <div class="message-content">${content}</div>
+          <div class="message-meta">
+            ${isCurrentUser ? `<span class="message-status">✓</span>` : ""}
+          </div>
+          <div class="message-reactions-container">
+            <div class="message-reactions">${reactionsHTML}</div>
+            <button class="react-btn" data-docid="${docId}">
+              <span>+</span>
+            </button>
+          </div>
+          ${editedHTML}
+        `;
+
+        // Insert before typing indicator
+        const typingIndicator = document.getElementById("typingIndicator");
+        chatBox.insertBefore(messageDiv, typingIndicator);
+      }
+
+      // Helper function for relative time
+      function formatRelativeTime(date) {
+        const now = new Date();
+        const diffInSeconds = Math.floor((now - date) / 1000);
+
+        if (diffInSeconds < 60) return "just now";
+        if (diffInSeconds < 3600)
+          return `${Math.floor(diffInSeconds / 60)}m ago`;
+        if (diffInSeconds < 86400)
+          return `${Math.floor(diffInSeconds / 3600)}h ago`;
+        return date.toLocaleDateString();
+      }
+
+      // Upload image
+      // Updated image upload function
+      uploadBtn.addEventListener("click", async () => {
+        const file = imageInput.files[0];
+        if (!file) {
+          showToast("Please select an image first", "warning");
+          return;
+        }
+
+        // Validate file type
+        if (!file.type.match("image.*")) {
+          showToast("Only image files are allowed", "warning");
+          return;
+        }
+
+        // Validate file size (5MB max)
+        if (file.size > 5 * 1024 * 1024) {
+          showToast("Image must be smaller than 5MB", "warning");
+          return;
+        }
+
+        try {
+          setLoading("uploadBtn", true);
+          showToast("Uploading image...", "info");
+
+          const formData = new FormData();
+          formData.append("image", file);
+
+          const response = await fetch("upload.php", {
+            method: "POST",
+            body: formData,
+          });
+
+          const data = await response.json();
+
+          if (data.status === "success") {
+            await addDoc(collection(db, "chatrooms", currentRoom, "messages"), {
+              user: currentUsername,
+              userId: currentUser.uid,
+              text: data.url,
+              type: "image",
+              time: new Date(),
+            });
+            imageInput.value = "";
+            showToast("Image uploaded successfully!", "success");
+          } else {
+            throw new Error(data.message || "Upload failed");
+          }
+        } catch (error) {
+          showToast(`Upload failed: ${error.message}`, "error");
+          console.error("Upload error:", error);
+        } finally {
+          setLoading("uploadBtn", false);
+        }
+      });
+
+      // Listen for typing status
+      function listenToTyping(room) {
+        const typingRef = collection(db, "chatrooms", room, "typing");
+
+        onSnapshot(typingRef, (snapshot) => {
+          let typingUsers = [];
+          snapshot.forEach((doc) => {
+            if (doc.id !== currentUser.uid && doc.data().isTyping) {
+              typingUsers.push(doc.data().username || doc.id);
+            }
+          });
+
+          if (typingUsers.length > 0) {
+            typingIndicator.innerText = `${typingUsers.join(", ")} ${
+              typingUsers.length > 1 ? "are" : "is"
+            } typing...`;
+            typingIndicator.style.display = "block";
+          } else {
+            typingIndicator.style.display = "none";
+          }
+
+          // Scroll to bottom when typing indicator changes
+          chatBox.scrollTop = chatBox.scrollHeight;
+        });
+      }
+
+      async function markMessagesAsRead() {
+        if (!currentUser || !currentRoom) return;
+
+        try {
+          const q = query(
+            collection(db, "chatrooms", currentRoom, "messages"),
+            where("userId", "!=", currentUser.uid),
+            where("status", "==", "sent")
+          );
+
+          const snapshot = await getDocs(q);
+          const batch = writeBatch(db);
+
+          snapshot.forEach((doc) => {
+            batch.update(doc.ref, { status: "delivered" });
+          });
+
+          await batch.commit();
+        } catch (error) {
+          console.error("Error updating read receipts:", error);
+          showToast("Failed to update read receipts", "error");
+        }
+      }
+
+      // Update the event listeners to throttle the calls
+      let readReceiptTimeout;
+
+      function scheduleMarkAsRead() {
+        clearTimeout(readReceiptTimeout);
+        readReceiptTimeout = setTimeout(markMessagesAsRead, 1000); // Debounce to 1 second
+      }
+
+      // Update your event listeners:
+      chatBox.addEventListener("scroll", scheduleMarkAsRead);
+      window.addEventListener("focus", scheduleMarkAsRead);
+
+      // Loading state utilities
+      // Improved loading state utility
+      function setLoading(buttonId, isLoading) {
+        const button = document.getElementById(buttonId);
+        if (!button) {
+          console.warn(`Button with ID ${buttonId} not found`);
+          return;
+        }
+
+        // Find or create spinner element
+        let spinner = button.querySelector(".spinner-border");
+        let text = button.querySelector("span:not(.spinner-border)");
+
+        if (isLoading) {
+          button.disabled = true;
+
+          // Create spinner if it doesn't exist
+          if (!spinner) {
+            spinner = document.createElement("span");
+            spinner.className = "spinner-border spinner-border-sm";
+            spinner.style.position = "absolute";
+            spinner.style.top = "50%";
+            spinner.style.left = "50%";
+            spinner.style.transform = "translate(-50%, -50%)";
+            button.appendChild(spinner);
+          }
+
+          spinner.classList.remove("d-none");
+
+          // Hide text if exists
+          if (text) {
+            text.style.visibility = "hidden";
+          }
+        } else {
+          button.disabled = false;
+
+          if (spinner) {
+            spinner.classList.add("d-none");
+          }
+
+          if (text) {
+            text.style.visibility = "visible";
+          }
+        }
+      }
+
+      // Edit Message
+      async function editMessage(docId, currentText) {
+        const newText = prompt("Edit your message:", currentText);
+        if (newText && newText !== currentText) {
+          try {
+            await updateDoc(
+              doc(db, "chatrooms", currentRoom, "messages", docId),
+              {
+                text: newText,
+                isEdited: true,
+                lastUpdated: new Date(),
+              }
+            );
+          } catch (error) {
+            showToast("Failed to edit message", "error");
+          }
+        }
+      }
+
+      // Delete Message (soft delete)
+      async function deleteMessage(docId) {
+        try {
+          const messageRef = doc(
+            db,
+            "chatrooms",
+            currentRoom,
+            "messages",
+            docId
+          );
+          const messageDoc = await getDoc(messageRef);
+
+          // Check if already deleted
+          if (messageDoc.data().isDeleted) {
+            showToast("Message was already deleted", "warning");
+            return;
+          }
+
+          if (confirm("Delete this message for everyone?")) {
+            await updateDoc(messageRef, {
+              isDeleted: true,
+              text: "[Message deleted]",
+              lastUpdated: new Date(),
+            });
+
+            // Show different toasts for images vs text
+            const msgType = messageDoc.data().type;
+            if (msgType === "image") {
+              showToast("Image deleted successfully", "success");
+            } else {
+              showToast("Message deleted successfully", "success");
+            }
+          }
+        } catch (error) {
+          showToast("Failed to delete message", "error");
+          console.error("Delete error:", error);
+        }
+      }
+
+      // Handle edit/delete clicks
+      chatBox.addEventListener("click", (e) => {
+        const messageElement = e.target.closest(".message");
+        if (!messageElement) return;
+
+        const isImage = messageElement.querySelector("img");
+        const editBtn = e.target.closest(".edit-btn");
+        const deleteBtn = e.target.closest(".delete-btn");
+
+        // Extra check for deleted messages
+        if (messageElement.querySelector(".deleted-message")) {
+          showToast("Cannot modify deleted messages", "warning");
+          return;
+        }
+
+        if (editBtn && !isImage) {
+          const docId = editBtn.dataset.docid;
+          const messageContent =
+            messageElement.querySelector(".message-content");
+          editMessage(docId, messageContent.textContent);
+        }
+
+        if (deleteBtn) {
+          const docId = deleteBtn.dataset.docid;
+          deleteMessage(docId);
+        }
+      });
+
+      function setUploadProgress(percent) {
+        const progress = document.getElementById("uploadProgress");
+        if (progress) {
+          progress.style.width = `${percent}%`;
+          progress.setAttribute("aria-valuenow", percent);
+        }
+      }
+
+      // Handle reaction button clicks
+      chatBox.addEventListener("click", (e) => {
+        const reactBtn = e.target.closest(".react-btn");
+        if (reactBtn) {
+          const docId = reactBtn.dataset.docid;
+          showReactionPicker(reactBtn, docId);
+        }
+
+        const reactionBtn = e.target.closest(".reaction-btn");
+        if (reactionBtn) {
+          const docId = reactionBtn.dataset.docid;
+          const emoji = reactionBtn.dataset.emoji;
+          toggleReaction(docId, emoji);
+        }
+      });
+
+      async function toggleReaction(docId, emoji) {
+        const messageRef = doc(db, "chatrooms", currentRoom, "messages", docId);
+
+        try {
+          const messageDoc = await getDoc(messageRef);
+          const currentReactions = messageDoc.data().reactions || {};
+
+          // 1. Remove user's existing reaction if any
+          let updatedReactions = {};
+          for (const [existingEmoji, users] of Object.entries(
+            currentReactions
+          )) {
+            const filteredUsers = users.filter((id) => id !== currentUser.uid);
+            if (filteredUsers.length > 0) {
+              updatedReactions[existingEmoji] = filteredUsers;
+            }
+          }
+
+          // 2. Add new reaction (unless clicking existing reaction)
+          const isRemoving = currentReactions[emoji]?.includes(currentUser.uid);
+          if (!isRemoving) {
+            updatedReactions[emoji] = [
+              ...(updatedReactions[emoji] || []),
+              currentUser.uid,
+            ];
+          }
+
+          await updateDoc(messageRef, { reactions: updatedReactions });
+        } catch (error) {
+          showToast("Failed to update reaction", "error");
+          console.error("Reaction error:", error);
+        }
+      }
+
+      // Show emoji picker
+      function showReactionPicker(button, docId) {
+        // Remove existing picker
+        const existingPicker = document.querySelector(
+          ".emoji-picker-container"
+        );
+        if (existingPicker) existingPicker.remove();
+
+        const pickerContainer = document.createElement("div");
+        pickerContainer.className = "emoji-picker-container";
+
+        const picker = new EmojiMart.Picker({
+          onEmojiSelect: (emoji) => {
+            toggleReaction(docId, emoji.native);
+            pickerContainer.remove();
+          },
+          theme: "light",
+        });
+
+        // Append to chatbox
+        const chatBox = document.getElementById("chatBox");
+        chatBox.appendChild(pickerContainer);
+        pickerContainer.appendChild(picker);
+
+        // Positioning logic (same as before)
+        const buttonRect = button.getBoundingClientRect();
+        const chatBoxRect = chatBox.getBoundingClientRect();
+        const relativeTop = buttonRect.top - chatBoxRect.top;
+        const relativeLeft = buttonRect.left - chatBoxRect.left;
+        const pickerHeight = 300;
+
+        if (relativeTop > pickerHeight) {
+          pickerContainer.style.top = `${relativeTop - pickerHeight - 10}px`;
+        } else {
+          pickerContainer.style.top = `${
+            relativeTop + button.offsetHeight + 10
+          }px`;
+        }
+        pickerContainer.style.left = `${relativeLeft}px`;
+
+        // Close when clicking outside
+        const handleOutsideClick = (e) => {
+          if (!pickerContainer.contains(e.target) && e.target !== button) {
+            pickerContainer.remove();
+            document.removeEventListener("click", handleOutsideClick);
+          }
+        };
+
+        // Add event listener after a small delay to avoid immediate close
+        setTimeout(() => {
+          document.addEventListener("click", handleOutsideClick);
+        }, 10);
+
+        // Also close when scrolling
+        const handleScroll = () => {
+          pickerContainer.remove();
+          document.removeEventListener("click", handleOutsideClick);
+          chatBox.removeEventListener("scroll", handleScroll);
+        };
+        chatBox.addEventListener("scroll", handleScroll, { once: true });
+      }
+
+      function showChatLoader(show = true) {
+        const loader = document.getElementById("chatLoader");
+        if (loader) {
+          loader.style.display = show ? "block" : "none";
+        }
+      }
+
+      // Logout
+      // Updated logout function
+      logoutBtn.addEventListener("click", () => {
+        // Clear any session flags
+        sessionStorage.removeItem("freshLogin");
+        signOut(auth).catch((error) => {
+          showToast(`Logout failed: ${error.message}`, "error");
+        });
+      });
+    </script>
+
+    <div id="toastContainer" class="toast-container"></div>
+  </body>
+</html>
